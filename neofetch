@@ -382,12 +382,12 @@ public_ip_host="http://ident.me"
 # Flag:    --ip_timeout
 public_ip_timeout=2
 
-# Local IP interface (macOS)
+# Local IP interface
 #
-# Default: 'en0'
-# Values:  'en0', 'en1'
+# Default: 'default' (interface of default route)
+# Values:  'default', 'en0', 'en1'
 # Flag:    --ip_interface
-local_ip_interface=('en0')
+local_ip_interface=('default')
 
 
 # Disk
@@ -3371,9 +3371,21 @@ get_battery() {
 get_local_ip() {
     case "$os" in
         "Linux" | "BSD" | "Solaris" | "AIX" | "IRIX")
-            local_ip="$(ip route get 1 | awk -F'src' '{print $2; exit}')"
-            local_ip="${local_ip/uid*}"
-            [[ -z "$local_ip" ]] && local_ip="$(ifconfig -a | awk '/broadcast/ {print $2; exit}')"
+            if [[ "${local_ip_interface[0]}" == "default" ]]; then
+                local_ip="$(ip route get 1 | awk -F'src' '{print $2; exit}')"
+                local_ip="${local_ip/uid*}"
+                [[ -z "$local_ip" ]] && local_ip="$(ifconfig -a | awk '/broadcast/ {print $2; exit}')"
+            else
+                for interface in "${local_ip_interface[@]}"; do
+                    local_ip="$(ip addr show $interface | awk '/inet / {print $2; exit}')"
+                    [[ -z "$local_ip" ]] && local_ip="$(ifconfig $interface | awk '/broadcast/ {print $2; exit}')"
+                    if [[ -n "$local_ip" ]]; then
+                        prin "$interface" "$local_ip"
+                    else
+                        err "Local IP: Could not detect local ip for $interface"
+                    fi
+                done
+            fi
         ;;
 
         "MINIX")
@@ -3381,8 +3393,9 @@ get_local_ip() {
         ;;
 
         "Mac OS X" | "iPhone OS")
-            if [[ "${#local_ip_interface[@]}" == "1" ]]; then
-                local_ip="$(ipconfig getifaddr "$local_ip_interface")"
+            if [[ "${local_ip_interface[0]}" == "default" ]]; then
+                interface="$(route get 1 | awk -F': ' '/interface/ {printf $2; exit}')"
+                local_ip="$(ipconfig getifaddr "$interface")"
             else
                 for interface in "${local_ip_interface[@]}"; do
                     local_ip="$(ipconfig getifaddr "$interface")"
